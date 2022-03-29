@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import copy
 import numpy as np
 import xml.dom.minidom
-# 构建有向图对象
+# 构建有/无向图对象
 Map = nx.DiGraph()
 
 
@@ -33,7 +33,7 @@ def haversine(lon1, lat1, lon2, lat2):  # 经度1，纬度1，经度2，纬度2 
     return c * r * 1000
 
 # return depot_drone_transit_graph, depots_node, transit_node, packages_node, cost_matrix
-def return_Digraph(N_depots):
+def return_Digraph(N_depots, N_transit_edges, N_packages):
     node = root.getElementsByTagName('node')
     print(node[0].nodeName)
 
@@ -67,6 +67,8 @@ def return_Digraph(N_depots):
         lon1 = pos_location[previous_node][0]
         lat1 = pos_location[previous_node][1]
         #     print(previous_node, end_node_id)
+        # we pick some node in one way not all
+
         for sub_node in way.getElementsByTagName('nd'):
             current_node_id = sub_node.getAttribute('ref')
             lon2 = pos_location[current_node_id][0]
@@ -79,53 +81,71 @@ def return_Digraph(N_depots):
         # print(sub_node.getAttribute('ref'))
 
     G2 = copy.deepcopy(Map)
+    # Digraph
     subgraphs = max(nx.strongly_connected_components(Map), key=len)
+
+    # no digraph
+    # subgraphs = max(nx.connected_components(Map), key=len)
+
 
     for node in Map.nodes:
         if node not in subgraphs:
             G2.remove_node(node)
-
-    for node in Map.nodes:
-        if ((Map.nodes[node]['lat'] >= 22.3989 or Map.nodes[node]['lat'] <= 22.3879) and node in G2.nodes):
-            G2.remove_node(node)
-        if ((Map.nodes[node]['lon'] <= 113.5436 or Map.nodes[node]['lon'] >= 113.5573) and node in G2.nodes):
-            G2.remove_node(node)
+    # print(len(G2.nodes))
+    # for node in Map.nodes:
+    #     if ((Map.nodes[node]['lat'] >= 22.3989 or Map.nodes[node]['lat'] <= 22.3879) and node in G2.nodes):
+    #         G2.remove_node(node)
+    #     if ((Map.nodes[node]['lon'] <= 113.5436 or Map.nodes[node]['lon'] >= 113.5573) and node in G2.nodes):
+    #         G2.remove_node(node)
 
     G3 = nx.to_undirected(G2)
 
-    plt.rcParams['figure.figsize'] = (20, 20)  # 单位是inches
-    nx.draw(G3
-            , pos=pos_location
-            #         , with_labels = True
-            , node_size=0.0001
-            , node_color='grey'
-            # '#FF8000' #'#6DCAF2' # '#FF8000' # '#6DCAF2' #  '#B9F1E5'   #'grey'   # '#FFBFBF' #  'k' #nodes_col.values()   #'y'
-            , width=0.5  # default = 1.0 , Line width of edges
-            #         , font_size = 4
-            #         , font_family = 'arial'
-            , edge_color='grey'  # b, k, m, g,
-            )
-    fig_name = 'zhuhai_keji6lu.jpg'
+    # create transit graph
+    node_name_idx = []
+    idx_node_name = {}
+    idx = -1
+    for node in G3.nodes:
+        idx += 1
+        node_name_idx.append(node)
+        idx_node_name[node] = idx
 
-    plt.savefig(fig_name, dpi=200)
-    plt.show()
+    TG = nx.Graph()
+    for i in range(len(node_name_idx)):
+        TG.add_node(i, lon=G3.nodes[node_name_idx[i]]['lon'], lat=G3.nodes[node_name_idx[i]]['lat'])
+    # add edges
 
-    # G2 is weighted Digraph
-    matrix_G2 = nx.to_numpy_array(G2)
-    # we turn to weighted noDi graph
-    G4 = nx.from_numpy_array(matrix_G2)
+    for edge in G3.edges:
+        TG.add_edge(idx_node_name[edge[0]], idx_node_name[edge[1]], weight=G3.edges[edge[0], edge[1]]['weight'])
+
+    # plt.rcParams['figure.figsize'] = (20, 20)  # 单位是inches
+    # nx.draw(G3
+    #         , pos=pos_location
+    #         #         , with_labels = True
+    #         , node_size=0.0001
+    #         , node_color='grey'
+    #         # '#FF8000' #'#6DCAF2' # '#FF8000' # '#6DCAF2' #  '#B9F1E5'   #'grey'   # '#FFBFBF' #  'k' #nodes_col.values()   #'y'
+    #         , width=0.5  # default = 1.0 , Line width of edges
+    #         #         , font_size = 4
+    #         #         , font_family = 'arial'
+    #         , edge_color='grey'  # b, k, m, g,
+    #         )
+    # fig_name = 'zhuhai_keji6lu.jpg'
+    #
+    # plt.savefig(fig_name, dpi=200)
+    # plt.show()
+
 
     # get shortest path of each nodes
-    len_path = dict(nx.all_pairs_dijkstra(G4))
+    len_path = dict(nx.all_pairs_dijkstra(TG))
 
-    # we get top-10 longest point to point then set the nodes are transit stop
+    # we get top-N_transit_edges longest point to point then set the nodes are transit stop
     edges_distance = {}
     transit_node = np.array([])
-    for (i, j) in G4.edges:
-        edges_distance[G4.edges[i, j]['weight']] = [i, j]
+    for (i, j) in TG.edges:
+        edges_distance[TG.edges[i, j]['weight']] = [i, j]
 
-
-    for i, j in zip(range(10), sorted(edges_distance, reverse=True)):
+    for i, j in zip(range(N_transit_edges), sorted(edges_distance, reverse=True)):
+        print("distance ", j)
         transit_node = np.append(transit_node, edges_distance[j])
         #     np.append(transit_node, edges_distance[i][1])
         # print(edges_distance[j])
@@ -133,35 +153,48 @@ def return_Digraph(N_depots):
     transit_node = np.unique(transit_node)  # del the Duplicate Nodes
 
     # cost_matrix
-    cost_matrix = np.zeros((G4.number_of_nodes(), G4.number_of_nodes()))
-    for i in range(0, G4.number_of_nodes()):
-        #     sub_row_cost = [0 for _ in range(G4.number_of_nodes())]
+    cost_matrix = np.zeros((TG.number_of_nodes(), TG.number_of_nodes()))
+    for i in range(0, TG.number_of_nodes()):
+        #     sub_row_cost = [0 for _ in range(TG.number_of_nodes())]
         for key, val in zip(len_path[i][0].keys(), len_path[i][0].values()):
             cost_matrix[i][key] = val
 
-    # final graph weighted Digraph
-    depot_drone_transit_graph = nx.from_numpy_array(cost_matrix, create_using=nx.DiGraph)
+
 
 
 
     # generate random depots
     depots_node = np.array([])
     while len(depots_node) < N_depots:
-        rand_node = np.random.randint(0, len(G4.nodes), 1)
+        rand_node = np.random.randint(0, len(TG.nodes), 1)
         if rand_node not in depots_node and rand_node not in transit_node:
             depots_node = np.append(depots_node, rand_node)
 
-    # the rest node are package sites
+    # packages are randomly picked from the rest node
     packages_node = np.array([])
-    for i in range(len(G4.nodes)):
-        if i not in depots_node and i not in transit_node:
-            packages_node = np.append(packages_node, i)
+    while len(packages_node) < N_packages:
+        rand_node = np.random.randint(0, len(TG.nodes), 1)
+        if rand_node not in depots_node and rand_node not in transit_node:
+            packages_node = np.append(packages_node, rand_node)
+
+    # the rest nodes are package node
+    # for i in range(len(TG.nodes)):
+    #     if i not in depots_node and i not in transit_node:
+    #         packages_node = np.append(packages_node, i)
+
+
+    for i in range(len(TG.nodes)):
+        if i in depots_node:
+            TG.nodes[i]['type'] = 'depot'
+        elif i in transit_node:
+            TG.nodes[i]['type'] = 'transit'
+        elif i in packages_node:
+            TG.nodes[i]['type'] = 'package'
+        else:
+            TG.nodes[i]['type'] = 'normal'
 
 
 
-
-
-
-    return depot_drone_transit_graph, depots_node, transit_node, packages_node, cost_matrix
+    return TG, depots_node, transit_node, packages_node, cost_matrix
 
 

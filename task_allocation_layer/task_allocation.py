@@ -5,22 +5,22 @@ from scipy.optimize import linprog
 from scipy import sparse
 import copy
 
-def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node):
+def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node, packages_node, normal_node):
     print("MCT")
     cost_vector = np.array([])
     edge_to_vector_idx = {} # format:[i,j]->idx
     vector_idx_to_edge = {} # format:idx->[i,j]
     out_nbrs = {}
     in_nbrs = {}
-    packages_node = np.array([])
-    for i in range(total_node):
-        if i not in transit_node and i not in depots_node:
-            packages_node = np.append(packages_node, i)
+    # packages_node = np.array([])
+    # for i in range(total_node):
+    #     if i not in transit_node and i not in depots_node:
+    #         packages_node = np.append(packages_node, i)
 
     for i in range(total_node):
-        if i not in transit_node: #exclude transit node
+        if i not in transit_node and i not in normal_node: #exclude transit node and normal_node
             for j in range(total_node):
-                if j not in transit_node:
+                if j not in transit_node and i not in normal_node:
 
                     #exclude self edge and package to package edges
                     if i!=j and (i in depots_node or j in depots_node):
@@ -336,10 +336,10 @@ def cut_circuit(circuit, n_depots, n_drones, edges_to_vector_idx, cost_vector, p
     return drone_tours
 
 
-def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, depots_node, transit_node, packages_node):
+def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, depots_node, transit_node, packages_node, normal_node):
 
     edges, x_edges, vector_idx_to_edges, edges_to_vector_idx, cost_vector = MCT(total_nodes, N_depots, N_packages,
-                                                                                cost_matrix, depots_node, transit_node)
+                                                                                cost_matrix, depots_node, transit_node, packages_node, normal_node)
 
     depot_components = get_strong_connected_components(total_nodes, N_depots, N_packages,
                                                        edges, depots_node, packages_node)
@@ -359,7 +359,7 @@ def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, de
     empty_tours = []
     for (i, tours) in enumerate(drone_tours):
         if len(tours) > 0:
-            tours = trim_circuit(tours, depots_node, packages_node)
+            drone_tours[i] = trim_circuit(tours, depots_node, packages_node)
         if len(drone_tours[i]) == 0:
             empty_tours.append(i)
 
