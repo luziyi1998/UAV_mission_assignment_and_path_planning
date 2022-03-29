@@ -9,7 +9,7 @@ Map = nx.DiGraph()
 
 
 
-dom = xml.dom.minidom.parse('/Users/luzy6/PycharmProjects/UAV_mission_assignment_and_path_planning/map0.osm')
+dom = xml.dom.minidom.parse('/Users/luzy6/PycharmProjects/UAV_mission_assignment_and_path_planning/bicycle.osm')
 
 root = dom.documentElement
 
@@ -61,16 +61,18 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
     way_set = root.getElementsByTagName('way')
     # print(way_set[0].nodeName)
 
+
+    # add edges mehod 1, method 1 and method 2 can't be both used
     for way in way_set:
         previous_node = start_node_id = way.getElementsByTagName('nd')[0].getAttribute('ref')
         end_node_id = way.getElementsByTagName('nd')[-1].getAttribute('ref')
-        lon1 = pos_location[previous_node][0]
-        lat1 = pos_location[previous_node][1]
         #     print(previous_node, end_node_id)
         # we pick some node in one way not all
 
         for sub_node in way.getElementsByTagName('nd'):
             current_node_id = sub_node.getAttribute('ref')
+            lon1 = pos_location[previous_node][0]
+            lat1 = pos_location[previous_node][1]
             lon2 = pos_location[current_node_id][0]
             lat2 = pos_location[current_node_id][1]
             if (current_node_id != start_node_id):
@@ -80,11 +82,68 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
                 previous_node = current_node_id
         # print(sub_node.getAttribute('ref'))
 
+
+
+
+    # # add edges method 2
+    # each_way_nodes = 6  # we define each way are no more than 5
+    # ways = []
+    # for way in way_set:
+    #     sub_way = []
+    #     previous_node = start_node_id = way.getElementsByTagName('nd')[0].getAttribute('ref')
+    #     sub_way.append(start_node_id)
+    #     for sub_node in way.getElementsByTagName('nd'):
+    #         current_node_id = sub_node.getAttribute('ref')
+    #         if (current_node_id != start_node_id):
+    #             sub_way.append(current_node_id)
+    #     ways.append(sub_way)
+    #
+    # # add edge and delete node
+    # new_ways = []
+    # for i in range(len(ways)):
+    #     new_sub_way = []
+    #     step = int(len(ways[i]) / each_way_nodes) + 1
+    #     for j in range(len(ways[i])):
+    #         if j % step == 0:
+    #             new_sub_way.append(ways[i][j])
+    #
+    #         else:
+    #             if ways[i][j] in Map.nodes():
+    #                 Map.remove_node(ways[i][j])
+    #     new_ways.append(new_sub_way)
+    # # add edges
+    # for i in range(len(new_ways)):
+    #     previous_node = new_ways[i][0]
+    #     if previous_node not in Map.nodes():
+    #         Map.add_node(previous_node
+    #                      , ID=previous_node
+    #                      , lon=pos_location[previous_node][0]
+    #                      , lat=pos_location[previous_node][1]
+    #                      )
+    #     for j in range(1, len(new_ways[i])):
+    #         current_node = new_ways[i][j]
+    #         if current_node not in Map.nodes():
+    #             Map.add_node(current_node
+    #                          , ID=current_node
+    #                          , lon=pos_location[current_node][0]
+    #                          , lat=pos_location[current_node][1]
+    #                          )
+    #         lon1 = pos_location[previous_node][0]
+    #         lat1 = pos_location[previous_node][1]
+    #         lon2 = pos_location[current_node][0]
+    #         lat2 = pos_location[current_node][1]
+    #
+    #         Map.add_edge(previous_node, current_node
+    #                      , way_type=0, weight=haversine(lon1, lat1, lon2, lat2)
+    #                      )
+    #         previous_node = current_node_id
+    #
+    # # method 2 end
     G2 = copy.deepcopy(Map)
     # Digraph
     subgraphs = max(nx.strongly_connected_components(Map), key=len)
 
-    # no digraph
+    # # no digraph
     # subgraphs = max(nx.connected_components(Map), key=len)
 
 
@@ -141,12 +200,14 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
     # we get top-N_transit_edges longest point to point then set the nodes are transit stop
     edges_distance = {}
     transit_node = np.array([])
+    transit_edges = []
     for (i, j) in TG.edges:
         edges_distance[TG.edges[i, j]['weight']] = [i, j]
 
     for i, j in zip(range(N_transit_edges), sorted(edges_distance, reverse=True)):
-        print("distance ", j)
+        # print("distance ", j)
         transit_node = np.append(transit_node, edges_distance[j])
+        transit_edges.append(edges_distance[j])
         #     np.append(transit_node, edges_distance[i][1])
         # print(edges_distance[j])
 
@@ -195,6 +256,6 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
 
 
 
-    return TG, depots_node, transit_node, packages_node, cost_matrix
+    return TG, depots_node, transit_node, packages_node, transit_edges, cost_matrix
 
 
