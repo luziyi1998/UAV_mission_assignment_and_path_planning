@@ -1,5 +1,8 @@
 import networkx as nx
-
+import numpy as np
+import scipy.sparse
+from scipy.optimize import linprog
+from scipy import sparse
 """
 对于一个无人机去送包裹的问题，只有两种情况，
 1：无人机到包裹的直线距离小于无人机最大的飞行距离的二分之一，这时无人机直接飞过去即可
@@ -41,34 +44,30 @@ def drone_find_path(TG, dpd, transit_node, packages_node, depots_node, flight_ma
     # if can fly directly by consuming no more than half of max_flight_distance, just fly
 
 
-def depot_to_package_path(TG, transit_node, transit_edges, depot_id, package_id):
+def generate_transit_network(TG, transit_node, transit_edges, depot_id, package_id):
     # we generate a new type graph
     transit_network = nx.Graph()
     # firstly, add transit nodes
     for i in transit_node:
+        #     print(i)
         transit_network.add_node(i
                                  , lon=TG.nodes[i]['lon']
                                  , lat=TG.nodes[i]['lat']
                                  , type='transit'
                                  )
-    # then we add transit edges
+    # then we add transit to another transit edges
+    for i in transit_node:
+        for j in transit_node:
+            if i != j:
+                transit_network.add_edge(i, j
+                                         , type='flght'
+                                         , weight=haversine(TG.nodes[i]['lon'], TG.nodes[i]['lat'], TG.nodes[j]['lon'],
+                                                            TG.nodes[j]['lat'])
+                                         )
+    # reset transit edges weight to 0
     for edge in transit_edges:
-        transit_network.add_edge(edge[0], edge[1]
-                                 , type='transit'
-                                 , weight=0
-                                 )
-        for t in transit_node:  # transit to transtit (not a pair of transit node)
-            if t not in edge:
-                transit_network.add_edge(edge[0], t
-                                         , type='flight'
-                                         , weight=haversine(TG.nodes[edge[0]]['lon'], TG.nodes[edge[0]]['lat'],
-                                                            TG.nodes[t]['lon'], TG.nodes[t]['lat'])
-                                         )
-                transit_network.add_edge(edge[1], t
-                                         , type='flight'
-                                         , weight=haversine(TG.nodes[edge[0]]['lon'], TG.nodes[edge[1]]['lat'],
-                                                            TG.nodes[t]['lon'], TG.nodes[t]['lat'])
-                                         )
+        transit_network.edges[edge[0], edge[1]]['weight'] = 0.0
+        transit_network.edges[edge[0], edge[1]]['type'] = 'transit'
 
     print(len(transit_network.edges))
 
@@ -85,6 +84,13 @@ def depot_to_package_path(TG, transit_node, transit_edges, depot_id, package_id)
                              , lat=TG.nodes[package_id]['lat']
                              , type='package'
                              )
+    transit_network.add_edge(depot_id, package_id
+                             , type='flight'
+                             , weight=haversine(TG.nodes[depot_id]['lon'], TG.nodes[depot_id]['lat'],
+                                                TG.nodes[package_id]['lon'], TG.nodes[package_id]['lat'])
+                             )
+
+    print(len(transit_network.edges))
 
     # finally we add edge ?depot to depot?, depot to package and depot to transit and transit to package
 
@@ -102,3 +108,156 @@ def depot_to_package_path(TG, transit_node, transit_edges, depot_id, package_id)
                                                     TG.nodes[package_id]['lat'])  # directly distance
                                  )
     print(len(transit_network.edges))
+
+    return transit_network
+
+
+"""
+线性规划
+我们有  边的消耗飞行距离向量 consume_vector    边的消耗时间向量 time_vector，这两个下标同一对应。 优化向量x，目的是 min time_vector * x  
+限制1 consume_vector * x <= max_flight_distance/2
+为了确保优化向量x选中的边形成一条可通行的路径(中间没有跳跃断层), 限制2 每个节点的出度等于入度，这样就保证了我们到达一个节点，也要从这个节点出去，不存在跳跃的情况 
+限制3 仓库的出度是1，入度是0  
+限制4 包裹的出度是0，入度是1
+"""
+def route_plan(TG, depot_id, package_id, max_flight_distance):
+    distance_cost_vector = np.array([])
+    time_cost_vector = np.array([])
+    edge_to_vector_idx = {}
+    vector_idx_to_edge = {}
+    out_nbrs = {}
+    in_nbrs = {}
+
+    for i in TG.nodes:
+        for j in TG.nodes:
+            if i != j:
+                distance_cost = TG.edges[i, j]['weight']
+                time_cost = haversine(TG.nodes[i]['lon'], TG.nodes[i]['lat'], TG.nodes[j]['lon'], TG.nodes[j]['lat'])
+
+                # append to vector
+                distance_cost_vector = np.append(distance_cost_vector, distance_cost)
+                time_cost_vector = np.append(time_cost_vector, time_cost)
+                edge_to_vector_idx[(i, j)] = len(distance_cost_vector)-1
+                vector_idx_to_edge[len(distance_cost_vector)-1] = (i, j)
+
+                if i not in out_nbrs:
+                    out_nbrs[i] = []
+                out_nbrs[i].append(j)
+
+                if j not in in_nbrs:
+                    in_nbrs[j] = []
+                in_nbrs[j].append(i)
+    #
+    # for (i, j) in TG.edges:
+    #     distance_cost = TG.edges[i, j]['weight']
+    #     time_cost = haversine(TG.nodes[i]['lon'], TG.nodes[i]['lat'], TG.nodes[j]['lon'], TG.nodes[j]['lat'])
+
+
+
+
+    # do MIP: we nned to get vector x make x * time_cost_vector is minimum
+
+    n_idxs = len(time_cost_vector)
+    print("n_idx", n_idxs)
+    print("distance_cost_vector_len", len(distance_cost_vector))
+
+    # constrain1
+    # make sure consume_vector * x <= max_flight_distance/2
+    A_ub_constraint1 = distance_cost_vector
+    b_ub_constraint1 = np.array([max_flight_distance])
+
+    # constrain2
+    # make sure every node in_degree equals to out_degree   but ignore depot and package
+    node_out_edge_mask = np.zeros((len(TG.nodes)-2, n_idxs))
+    node_in_edge_mask = np.zeros((len(TG.nodes)-2, n_idxs))
+    # print("out shape", node_out_edge_mask.shape)
+    # print("in shape", node_in_edge_mask.shape)
+
+    node_nbr_idx = -1
+    for i in TG.nodes:
+        if i != depot_id and i != package_id:
+            node_nbr_idx += 1
+            for onbr in out_nbrs[i]:
+                index = edge_to_vector_idx[i, onbr]
+                node_out_edge_mask[node_nbr_idx, index] = 1
+
+            for inbr in in_nbrs[i]:
+                index = edge_to_vector_idx[inbr, i]
+                node_in_edge_mask[node_nbr_idx, index] = 1
+
+    for i in range(len(TG.nodes)-2):
+        for j in range(n_idxs):
+            node_out_edge_mask[i, j] = node_out_edge_mask[i, j] - node_in_edge_mask[i, j]
+
+    A_eq_constraint1 = node_out_edge_mask
+    b_eq_constraint1 = np.zeros(len(TG.nodes)-2).reshape(-1, 1)
+
+
+    # constrain3
+    # out-flow and in-flow from depot is 1 and 0
+    depot_out_edge_mask = np.zeros(n_idxs)
+    depot_in_edge_mask = np.zeros(n_idxs)
+    # print("out shape", depot_out_edge_mask.shape)
+    # print("in shape", depot_in_edge_mask.shape)
+
+    for onbr in out_nbrs[depot_id]:
+        index = edge_to_vector_idx[depot_id, onbr]
+        depot_out_edge_mask[index] = 1
+    for inbr in in_nbrs[depot_id]:
+        index = edge_to_vector_idx[inbr, depot_id]
+        depot_in_edge_mask[index] = 1
+
+    A_eq_constraint2 = np.vstack([depot_out_edge_mask, depot_in_edge_mask])
+    b_eq_constraint2 = np.array([1, 0]).reshape(-1 ,1)
+    # print("out shape", depot_out_edge_mask.shape)
+    # print("in shape", depot_in_edge_mask.shape)
+
+    # constrain3
+    # out-flow and in-flow from package is 0 and 1
+    package_out_edge_mask = np.zeros(n_idxs)
+    package_in_edge_mask = np.zeros(n_idxs)
+
+    for onbr in out_nbrs[package_id]:
+        index = edge_to_vector_idx[package_id, onbr]
+        package_out_edge_mask[index] = 1
+    for inbr in in_nbrs[package_id]:
+        index = edge_to_vector_idx[inbr, package_id]
+        package_in_edge_mask[index] = 1
+
+    A_eq_constraint3 = np.vstack([package_out_edge_mask, package_in_edge_mask])
+    b_eq_constraint3 = np.array([0, 1]).reshape(-1 ,1)
+    # add all constraints
+    A_ub = A_ub_constraint1.reshape(1, -1)
+    b_ub = b_ub_constraint1.reshape(1 ,-1)
+    # print("eq_con1 shape", A_eq_constraint1.shape)
+    # print("eq_con2 shape", A_eq_constraint2.shape)
+    A_eq = np.vstack([A_eq_constraint1, A_eq_constraint2])
+    # print('1.5')
+    # print("A_eq shape", A_eq.shape)
+    # print("eq con3 shape", A_eq_constraint3.shape)
+    A_eq = np.vstack([A_eq, A_eq_constraint3])
+
+    # print("b con1 shape", b_eq_constraint1.shape)
+    # print("b con2 shape", b_eq_constraint2.shape)
+    b_eq = np.vstack([b_eq_constraint1, b_eq_constraint2]).reshape(-1, 1)
+    # print("b_eq", b_eq.shape)
+    b_eq = np.vstack([b_eq, b_eq_constraint3]).reshape(-1, 1)
+
+    x_bound = [(0, 1) for _ in range(n_idxs)]
+    print("start potimizer")
+    print("A_ub", A_ub.shape)
+    print("b_ub", b_ub.shape)
+    print("A_eq", A_eq.shape)
+    print("b_uq", b_eq.shape)
+
+    res = linprog(c=time_cost_vector, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
+                  bounds=x_bound, )
+    print(res)
+    x_edges = res.x
+    # covert float to int
+    x_edges = [round(x) for x in x_edges]
+
+    # finally we get the optimal edges that less than x_edges
+    edges = [vector_idx_to_edge[i] for (i, val) in enumerate(x_edges) if val > 0]
+
+    return x_edges, edges
