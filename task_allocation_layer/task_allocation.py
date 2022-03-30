@@ -4,12 +4,13 @@ import scipy.sparse
 from scipy.optimize import linprog
 from scipy import sparse
 import copy
+import os
 
 def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node, packages_node, normal_node):
-    print("MCT")
+
     cost_vector = np.array([])
-    edge_to_vector_idx = {} # format:[i,j]->idx
-    vector_idx_to_edge = {} # format:idx->[i,j]
+    edge_to_vector_idx = {}  # format:[i,j]->idx
+    vector_idx_to_edge = {}  # format:idx->[i,j]
     out_nbrs = {}
     in_nbrs = {}
     # packages_node = np.array([])
@@ -18,17 +19,17 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
     #         packages_node = np.append(packages_node, i)
 
     for i in range(total_node):
-        if i not in transit_node and i not in normal_node: #exclude transit node and normal_node
+        if i not in transit_node and i not in normal_node:  # exclude transit node and normal_node
             for j in range(total_node):
                 if j not in transit_node and i not in normal_node:
 
-                    #exclude self edge and package to package edges
-                    if i!=j and (i in depots_node or j in depots_node):
+                    # exclude self edge and package to package edges
+                    if i != j and (i in depots_node or j in depots_node):
                         edge_cost = cost_matrix[i][j]
 
                         cost_vector = np.append(cost_vector, edge_cost)
-                        edge_to_vector_idx[(i,j)] = len(cost_vector) - 1
-                        vector_idx_to_edge[len(cost_vector) - 1] = (i,j)
+                        edge_to_vector_idx[(i, j)] = len(cost_vector) - 1
+                        vector_idx_to_edge[len(cost_vector) - 1] = (i, j)
 
                         if i not in out_nbrs:
                             out_nbrs[i] = []
@@ -38,12 +39,12 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
                             in_nbrs[j] = []
                         in_nbrs[j].append(i)
 
-    #do  MIP: we need to get vector x that make x * cost_vector is minimum
-    
+    # do  MIP: we need to get vector x that make x * cost_vector is minimum
+
     n_idxs = len(cost_vector)
 
     # add constraint on package->depot and depot->package edges
-    depot_package_mask = sparse.lil_matrix((n_depots*n_packages*2, n_idxs))
+    depot_package_mask = sparse.lil_matrix((n_depots * n_packages * 2, n_idxs))
     index = -1
     for i in depots_node:
         for j in packages_node:
@@ -53,14 +54,13 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
                 depot_package_mask[index, edge_to_vector_idx[i, j]] = 1.0
 
             if (j, i) in edge_to_vector_idx:
-                depot_package_mask[index + n_depots*n_packages, edge_to_vector_idx[j, i]] = 1.0
-
+                depot_package_mask[index + n_depots * n_packages, edge_to_vector_idx[j, i]] = 1.0
 
     x_bound = [(0, None) for _ in range(n_idxs)]
     A_ub_constraint1 = depot_package_mask
-    b_ub_constraint1 = np.ones(n_depots*n_packages*2) # make sure every depot to package or reverse only ues once
+    b_ub_constraint1 = np.ones(n_depots * n_packages * 2)  # make sure every depot to package or reverse only ues once
 
-    print("constraints for out-edges and in-edges for package")
+
     # constraints for out-edges and in-edges for package
     package_out_edge_mask = sparse.lil_matrix((n_packages, n_idxs))
     package_in_edge_mask = sparse.lil_matrix((n_packages, n_idxs))
@@ -81,11 +81,11 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
     A_eq_constraint2 = package_in_edge_mask
     b_eq_constraint2 = np.ones(n_packages)  # make sure every packages are visited
 
-    print("constranints for in-flow and out-flow from depots")
+
     # constranints for in-flow and out-flow from depots
     depot_out_edge_mask = np.zeros((n_depots, n_idxs))
     depot_in_edge_mask = np.zeros((n_depots, n_idxs))
-    print("1")
+
     depot_nbr_index = -1
     for i in depots_node:
         depot_nbr_index += 1
@@ -96,7 +96,7 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
         for inbr in in_nbrs[i]:
             index = edge_to_vector_idx[inbr, i]
             depot_in_edge_mask[depot_nbr_index, index] = 1.
-    print("make sure every depots in and out degree equal")
+
     # make sure every depots in and out degree equal
     for i in range(n_depots):
         for j in range(n_idxs):
@@ -104,7 +104,6 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
 
     A_eq_constraint3 = depot_out_edge_mask
     b_eq_constraint3 = np.zeros(n_depots).reshape(-1, 1)
-    print("all all constarints")
 
     # print("last eq: make sure every package is picked, so the number of edges is 2 * n_packages")
     # #last eq: make sure every package is picked, so the number of edges is 2*n_packages
@@ -117,38 +116,34 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
 
     A_eq = scipy.sparse.vstack([A_eq_constraint1, A_eq_constraint2])
     A_eq = scipy.sparse.vstack([A_eq, A_eq_constraint3])
-    # A_eq = scipy.sparse.vstack([A_eq, A_eq_constraint4])
-    print("A_eq.shape ", A_eq.shape)
     b_eq = np.hstack([b_eq_constraint1, b_eq_constraint2]).reshape(-1, 1)
-    print("b_eq.shape ", b_eq.shape, "b_eq_constraint3.shape ", b_eq_constraint3.shape)
     b_eq = np.vstack([b_eq, b_eq_constraint3]).reshape(-1, 1)
-    # b_eq = np.append(b_eq, b_eq_constraint4).reshape(-1, 1)
-    print("b_eq.shape ", b_eq.shape)
-    print("start optimizer")
+
     res = linprog(c=cost_vector, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
-                  bounds=x_bound,)
-    print(res)
+                  bounds=x_bound, )
+    # print(res)
+    if res.success == False:
+        print("task allocate fail")
+        os._exit(0)
 
     x_edges = res.x
     # covert flaot to int
     x_edges = [round(x) for x in x_edges]
 
     # finally we get the optimal edges that less than x_edges
-    edges = [vector_idx_to_edge[i] for (i, val) in enumerate(x_edges) if val>0]
-
+    edges = [vector_idx_to_edge[i] for (i, val) in enumerate(x_edges) if val > 0]
 
     return (edges, x_edges, vector_idx_to_edge, edge_to_vector_idx, cost_vector)
 
 
 # 得到MCT结果的强连通分量，
 def get_strong_connected_components(total_node, n_depots, n_packages, edges, depot_nodes, packages_node):
-
     adj_matrix = np.zeros([total_node, total_node])
 
     for e in edges:
         adj_matrix[e[0], e[1]] = 1
 
-    #we actually dont consider the transit node but we still can get the components of depots and packages
+    # we actually dont consider the transit node but we still can get the components of depots and packages
     graph = nx.from_numpy_array(adj_matrix, create_using=nx.DiGraph)
 
     components = nx.strongly_connected_components(graph)
@@ -160,11 +155,9 @@ def get_strong_connected_components(total_node, n_depots, n_packages, edges, dep
             for idx in comp:
                 if idx in depot_nodes:
                     count += 1
-                    print("component ", count)
                     cur_comp_depot = np.append(cur_comp_depot, idx)
 
             depot_components.append(cur_comp_depot)
-
 
     return depot_components
 
@@ -175,12 +168,12 @@ def do_merge_component(x_edges, depot_components, edge_to_vector_idx, n_depots, 
 
     # stop when there are only one comp
     while len(merged_components) > 1:
-        min_to_merge = (0, 0) # i -> j
+        min_to_merge = (0, 0)  # i -> j
         min_depots_in_merged_comps = (0, 0)
         cmin = float("inf")
 
         for comp1_idx in range(len(merged_components) - 1):
-            for comp2_idx in range(comp1_idx + 1,len(merged_components)):
+            for comp2_idx in range(comp1_idx + 1, len(merged_components)):
                 # print("comp1_idx", comp1_idx, "comp2_idx", comp2_idx)
                 cmin_for_dep_pair = float("inf")
                 depots_to_merge = (0, 0)
@@ -188,7 +181,8 @@ def do_merge_component(x_edges, depot_components, edge_to_vector_idx, n_depots, 
                 for dep1 in merged_components[comp1_idx]:
                     for dep2 in merged_components[comp2_idx]:
                         # print("dep1", dep1, "dep2", dep2)
-                        dep_cost = cost_vector[edge_to_vector_idx[dep1, dep2]] + cost_vector[edge_to_vector_idx[dep2, dep1]]
+                        dep_cost = cost_vector[edge_to_vector_idx[dep1, dep2]] + cost_vector[
+                            edge_to_vector_idx[dep2, dep1]]
                         # print("dep_cost", dep_cost)
                         if dep_cost < cmin_for_dep_pair:
                             cmin_for_dep_pair = dep_cost
@@ -209,14 +203,15 @@ def do_merge_component(x_edges, depot_components, edge_to_vector_idx, n_depots, 
         new_comps = len(merged_components) - 1
         new_merged_depot_comps = []
 
-        new_merged_depot_comps.append(np.hstack([merged_components[min_to_merge[0]], merged_components[min_to_merge[1]]]))
+        new_merged_depot_comps.append(
+            np.hstack([merged_components[min_to_merge[0]], merged_components[min_to_merge[1]]]))
 
         for (i, deps) in enumerate(merged_components):
             if i not in min_to_merge:
                 new_merged_depot_comps.append(deps)
 
         merged_components = copy.deepcopy(new_merged_depot_comps)
-        print("new_components: ", merged_components)
+
 
     return merged_components, x_edges
 
@@ -240,7 +235,7 @@ def get_multiedge_tour(total_node, depots_node, packages_node, x_edges, vector_i
 
     # now we get the edge_count and adj_list
 
-    curr_path = [] #stack
+    curr_path = []  # stack
     circuit = np.array([])
 
     # start from the first vtx with degree > 1
@@ -265,18 +260,17 @@ def get_multiedge_tour(total_node, depots_node, packages_node, x_edges, vector_i
             circuit = np.append(circuit, curr_v)
             curr_v = curr_path.pop()
 
-
     return circuit
+
 
 # Cut off the extra nodes at both ends, out of the first node connecting the package and the last node connecting the package
 def trim_circuit(circuit, depots_node, packages_node):
-
     first_site_idx = -1
     index = -1
     for i in circuit:
         index += 1
         # print("node ", i, "index: ", index)
-        if  i in packages_node:
+        if i in packages_node:
             first_site_idx = index
             break
 
@@ -285,44 +279,45 @@ def trim_circuit(circuit, depots_node, packages_node):
         return
 
     # cut the extra head nodes
-    circuit = circuit[first_site_idx-1:]
+    circuit = circuit[first_site_idx - 1:]
 
     last_site_idx = -1
     index = -1
-    #Inverted traversal
-    for j in range(len(circuit)-1, -1, -1):
+    # Inverted traversal
+    for j in range(len(circuit) - 1, -1, -1):
         # print("j", j, "node ", circuit[j])
         if circuit[j] in packages_node:
             last_site_idx = j
             break
-    #cut the extra rear node: last package_idx is j, we remain the j and j+1 index and delete j+2 and following
-    circuit = circuit[:j+2]
+    # cut the extra rear node: last package_idx is j, we remain the j and j+1 index and delete j+2 and following
+    circuit = circuit[:j + 2]
 
     # print("first_package_idx ", first_site_idx, "last_package_idx ", last_site_idx)
 
     return circuit
 
+
 # now we distribute the tour over m drones: circuit -> m tours, each tours denote a certain drone's route
 def cut_circuit(circuit, n_depots, n_drones, edges_to_vector_idx, cost_vector, packages_node):
-    arc_costs = [cost_vector[edges_to_vector_idx[i, j]] for (i, j) in zip(circuit[:len(circuit)-1], circuit[1:])]
+    arc_costs = [cost_vector[edges_to_vector_idx[i, j]] for (i, j) in zip(circuit[:len(circuit) - 1], circuit[1:])]
     total_cost = sum(arc_costs)
-    print("total_cost", total_cost)
+
 
     drone_tours = [[] for _ in range(n_drones)]
-    idx = 0 #over the circuit
+    idx = 0  # over the circuit
     # print("len circuit", len(circuit))
     for i in range(n_drones):
         this_drone_tour = [circuit[idx]]
         tour_cost = 0
 
-        while tour_cost <= total_cost/n_drones and idx <len(circuit)-1:
+        while tour_cost <= total_cost / n_drones and idx < len(circuit) - 1:
             # print("while idx", idx)
-            tour_cost += arc_costs[idx] # cost of idx th edge
+            tour_cost += arc_costs[idx]  # cost of idx th edge
             idx += 1
             this_drone_tour.append(circuit[idx])
 
         # every time we get a done's route we make sure the route ends at a depot
-        if idx < len(circuit)-1:
+        if idx < len(circuit) - 1:
             if circuit[idx] in packages_node:
                 tour_cost += arc_costs[idx]
                 idx += 1
@@ -330,22 +325,23 @@ def cut_circuit(circuit, n_depots, n_drones, edges_to_vector_idx, cost_vector, p
 
         drone_tours[i] = this_drone_tour
 
-        if idx == len(circuit)-1:
+        if idx == len(circuit) - 1:
             break
 
     return drone_tours
 
 
-def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, depots_node, transit_node, packages_node, normal_node):
-
+def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, depots_node, transit_node, packages_node,
+                    normal_node):
     edges, x_edges, vector_idx_to_edges, edges_to_vector_idx, cost_vector = MCT(total_nodes, N_depots, N_packages,
-                                                                                cost_matrix, depots_node, transit_node, packages_node, normal_node)
+                                                                                cost_matrix, depots_node, transit_node,
+                                                                                packages_node, normal_node)
 
     depot_components = get_strong_connected_components(total_nodes, N_depots, N_packages,
                                                        edges, depots_node, packages_node)
 
     merged_components, x_edges = do_merge_component(x_edges, depot_components, edges_to_vector_idx,
-                                           N_depots, N_packages, cost_vector)
+                                                    N_depots, N_packages, cost_vector)
 
     circuit = get_multiedge_tour(total_nodes, depots_node, packages_node, x_edges,
                                  vector_idx_to_edges, N_depots, N_packages)
@@ -369,4 +365,5 @@ def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, de
         if i not in empty_tours:
             final_drone_tours.append(tours)
 
+    print("task allocation done")
     return final_drone_tours

@@ -32,10 +32,11 @@ def haversine(lon1, lat1, lon2, lat2):  # 经度1，纬度1，经度2，纬度2 
     r = 6371  # 地球平均半径，单位为公里
     return c * r * 1000
 
-# return depot_drone_transit_graph, depots_node, transit_node, packages_node, cost_matrix
+
 def return_Digraph(N_depots, N_transit_edges, N_packages):
+    """return depot_drone_transit_graph, depots_node, transit_node, packages_node, cost_matrix"""
     node = root.getElementsByTagName('node')
-    print(node[0].nodeName)
+    # print(node[0].nodeName)
 
     pos_location = {}  # position of all nodes in the graph" to draw the figure
     loc = []
