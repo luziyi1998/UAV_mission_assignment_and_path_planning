@@ -112,18 +112,25 @@ def UAV_task_allocation_path_planning(N_depots, N_transit_edges, N_packages, Max
     # plt.show()
 
     drone_one_dilivery_route = []
+    drone_one_dilivery_time_stamp = []
     drone_one_dilivery_time = []
     # now we compute each drone routes(我们应该为每个无人机先计算出一个交付任务——从仓库出发再到回到仓库，然后计算这些交付序列的冲突节点,解决所有冲突后，得到所有无人机该交付任务的最终路径)
     # 我们现在只算每个无人机第一个任务路径
     for i in range(len(drone_tours)):
-        start_depot, package, end_depot = drone_tours[i][0:3]
-        departure_route, departure_time = one_drone_dilivery_departure_route(TG, transit_node, transit_edges, start_depot, package, Max_flight)
-        return_route, return_time = one_drone_dilivery_return_route(TG, transit_node, transit_edges, end_depot, package, Max_flight)
-        drone_one_dilivery_route.append(departure_route + return_route)
-        drone_one_dilivery_time.append(departure_time + return_time)
+        start_depot, package = drone_tours[i][0:2]
+        print()
+        success, departure_route, departure_time_stamp, departure_time = one_drone_dilivery_departure_route(TG, transit_node, transit_edges, start_depot, package, Max_flight)
+        if success:
+            drone_one_dilivery_route.append(departure_route)
+            drone_one_dilivery_time_stamp.append(departure_time_stamp)
+            drone_one_dilivery_time.append(departure_time)
+        else:
+            drone_one_dilivery_route.append([])
+            drone_one_dilivery_time_stamp.append([0])
+            drone_one_dilivery_time.append(-1) # denote fail
 
 
-    return drone_one_dilivery_route, drone_one_dilivery_time
+    return drone_one_dilivery_route, drone_one_dilivery_time_stamp, drone_one_dilivery_time
 
 
 
@@ -135,10 +142,12 @@ def one_drone_dilivery_departure_route(TG, transit_node, transit_edges, depot_id
     # now we get a specific transit network only contain one depot and one package and transit node
     transit_network = MAPF.single_drone_FP.generate_transit_network(TG, transit_node, transit_edges, depot_id, package_id)
 
-    x_edges, sub_mission_way = MAPF.single_drone_FP.departure_route_plan(transit_network, depot_id, package_id, Max_flight)
-
+    success, x_edges, sub_mission_way = MAPF.single_drone_FP.departure_route_plan(transit_network, depot_id, package_id, Max_flight)
+    if success == False:
+        return False, [], [0], -1
     # path finding by Linear Planning
     route_plan_distance_cost = 0
+    cur_time = 0
     for way in sub_mission_way:
         route_plan_distance_cost += transit_network.edges[way[0], way[1]]['weight']
     print(depot_id, " to", package_id, "route_plan_distance_cost", route_plan_distance_cost)
@@ -156,52 +165,21 @@ def one_drone_dilivery_departure_route(TG, transit_node, transit_edges, depot_id
 
     # we assume that flight speed is 1.5 times the transit speed
     route_plan_time_cost = 0
+    time_stamp = [0.0]
     for (i, j) in zip(sub_mission_route_by_LP[:len(sub_mission_route_by_LP) - 1], sub_mission_route_by_LP[1:]):
-        if transit_network.edges[i, j]['type'] == 'flight':
-            route_plan_time_cost += transit_network.edges[i, j]['weight']
-        else:
-            route_plan_time_cost += 1.5 * haversine(TG.nodes[i]['lon'], TG.nodes[i]['lat'], TG.nodes[j]['lon'],
-                                                    TG.nodes[j]['lat'])
+        route_plan_time_cost += transit_network.edges[i, j]['time']
+        time_stamp.append(route_plan_time_cost)
+
+        # if transit_network.edges[i, j]['type'] == 'flight':
+        #     route_plan_time_cost += transit_network.edges[i, j]['weight']
+        # else:
+        #     route_plan_time_cost += haversine(TG.nodes[i]['lon'], TG.nodes[i]['lat'], TG.nodes[j]['lon'],
+        #                                             TG.nodes[j]['lat'])
 
     print("use time", route_plan_time_cost)
 
-    return sub_mission_route_by_LP, route_plan_time_cost
+    return True, sub_mission_route_by_LP, time_stamp, route_plan_time_cost
 
-def one_drone_dilivery_return_route(TG, transit_node, transit_edges, depot_id, package_id, Max_flight):
-    # now we get a specific transit network only contain one depot and one package and transit node
-    transit_network = MAPF.single_drone_FP.generate_transit_network(TG, transit_node, transit_edges, depot_id, package_id)
-
-    x_edges, sub_mission_way = MAPF.single_drone_FP.return_route_plan(transit_network, depot_id, package_id, Max_flight)
-
-    # path finding by Linear Planning
-    route_plan_distance_cost = 0
-    for way in sub_mission_way:
-        route_plan_distance_cost += transit_network.edges[way[0], way[1]]['weight']
-    print(package_id, " to", depot_id, "route_plan_distance_cost", route_plan_distance_cost)
-
-    # get the entire route of this sub_mission
-    direct_edges = {}
-    for (i, j) in sub_mission_way:
-        direct_edges[i] = j
-    sub_mission_route_by_LP = [package_id]
-    cur_node = package_id
-    while len(sub_mission_route_by_LP) <= len(sub_mission_way):
-        sub_mission_route_by_LP.append(direct_edges[cur_node])
-        cur_node = direct_edges[cur_node]
-    print("route:", sub_mission_route_by_LP)
-
-    # we assume that flight speed is 1.5 times the transit speed
-    route_plan_time_cost = 0
-    for (i, j) in zip(sub_mission_route_by_LP[:len(sub_mission_route_by_LP) - 1], sub_mission_route_by_LP[1:]):
-        if transit_network.edges[i, j]['type'] == 'flight':
-            route_plan_time_cost += transit_network.edges[i, j]['weight']
-        else:
-            route_plan_time_cost += 1.5 * haversine(TG.nodes[i]['lon'], TG.nodes[i]['lat'], TG.nodes[j]['lon'],
-                                                    TG.nodes[j]['lat'])
-
-    print("use time", route_plan_time_cost)
-
-    return sub_mission_route_by_LP, route_plan_time_cost
 
 
 
@@ -221,11 +199,12 @@ if __name__ == '__main__':
     Max_flight = opt.Max_flight
     # print(N_depots, N_drones, N_packages, N_transit_edges)
 
-    drone_one_dilivery_route, drone_one_dilivery_time = UAV_task_allocation_path_planning(N_depots, N_transit_edges, N_packages, Max_flight)
+    drone_one_dilivery_route, drone_one_delivery_time_stamp, drone_one_dilivery_time = UAV_task_allocation_path_planning(N_depots, N_transit_edges, N_packages, Max_flight)
 
 
-    for (route, time) in zip(drone_one_dilivery_route, drone_one_dilivery_time):
+    for (route, time_stamp, time) in zip(drone_one_dilivery_route, drone_one_delivery_time_stamp, drone_one_dilivery_time):
         print("route:", route)
+        print("time_stamp", time_stamp)
         print("time", time)
 
 

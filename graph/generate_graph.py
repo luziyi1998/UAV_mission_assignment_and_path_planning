@@ -231,6 +231,7 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
         rand_node = np.random.randint(0, len(TG.nodes), 1)
         if rand_node not in depots_node and rand_node not in transit_node:
             depots_node = np.append(depots_node, rand_node)
+            depots_node = np.unique(depots_node)
 
     # packages are randomly picked from the rest node
     packages_node = np.array([])
@@ -238,6 +239,7 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
         rand_node = np.random.randint(0, len(TG.nodes), 1)
         if rand_node not in depots_node and rand_node not in transit_node:
             packages_node = np.append(packages_node, rand_node)
+            packages_node = np.unique(packages_node)
 
     # the rest nodes are package node
     # for i in range(len(TG.nodes)):

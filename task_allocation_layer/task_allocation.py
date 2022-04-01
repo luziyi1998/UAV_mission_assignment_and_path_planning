@@ -18,26 +18,29 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
     #     if i not in transit_node and i not in depots_node:
     #         packages_node = np.append(packages_node, i)
 
-    for i in range(total_node):
-        if i not in transit_node and i not in normal_node:  # exclude transit node and normal_node
-            for j in range(total_node):
-                if j not in transit_node and i not in normal_node:
-
+    # for i in range(total_node):
+    #     if i not in transit_node and i not in normal_node:  # exclude transit node and normal_node
+    #         for j in range(total_node):
+    #             if j not in transit_node and j not in normal_node:
+    for i in np.append(depots_node, packages_node):
+        for j in np.append(depots_node, packages_node):
+            i, j = int(i), int(j)
+            if i != j and (i in depots_node or j in depots_node):
                     # exclude self edge and package to package edges
-                    if i != j and (i in depots_node or j in depots_node):
-                        edge_cost = cost_matrix[i][j]
+                    # if i != j and (i in depots_node or j in depots_node):
+                    edge_cost = cost_matrix[i][j]
 
-                        cost_vector = np.append(cost_vector, edge_cost)
-                        edge_to_vector_idx[(i, j)] = len(cost_vector) - 1
-                        vector_idx_to_edge[len(cost_vector) - 1] = (i, j)
+                    cost_vector = np.append(cost_vector, edge_cost)
+                    edge_to_vector_idx[(i, j)] = len(cost_vector) - 1
+                    vector_idx_to_edge[len(cost_vector) - 1] = (i, j)
 
-                        if i not in out_nbrs:
-                            out_nbrs[i] = []
-                        out_nbrs[i].append(j)
+                    if i not in out_nbrs:
+                        out_nbrs[i] = []
+                    out_nbrs[i].append(j)
 
-                        if j not in in_nbrs:
-                            in_nbrs[j] = []
-                        in_nbrs[j].append(i)
+                    if j not in in_nbrs:
+                        in_nbrs[j] = []
+                    in_nbrs[j].append(i)
 
     # do  MIP: we need to get vector x that make x * cost_vector is minimum
 
@@ -119,8 +122,16 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
     b_eq = np.hstack([b_eq_constraint1, b_eq_constraint2]).reshape(-1, 1)
     b_eq = np.vstack([b_eq, b_eq_constraint3]).reshape(-1, 1)
 
+
+    """
+     OptimizeWarning: Solving system with option 'sym_pos':False failed. This may happen occasionally, especially as the solution is approached. 
+     However, if you see this frequently, your problem may be numerically challenging. 
+     If you cannot improve the formulation, consider setting 'lstsq' to True. 
+     Consider also setting `presolve` to True, if it is not already.
+
+    """
     res = linprog(c=cost_vector, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
-                  bounds=x_bound, )
+                  bounds=x_bound, options = {"presolve":True})
     # print(res)
     if res.success == False:
         print("task allocate fail")
@@ -356,7 +367,7 @@ def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, de
     for (i, tours) in enumerate(drone_tours):
         if len(tours) > 0:
             drone_tours[i] = trim_circuit(tours, depots_node, packages_node)
-        if len(drone_tours[i]) == 0:
+        if len(drone_tours[i]) == 0 or drone_tours[i] == None:
             empty_tours.append(i)
 
     # delete empty drone tours
