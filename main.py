@@ -165,7 +165,7 @@ def one_drone_dilivery_departure_route(TG, transit_node, transit_edges, depot_id
         cur_node = direct_edges[cur_node]
     print("route:", sub_mission_route_by_LP)
 
-    # we assume that flight speed is 1.5 times the transit speed
+
     route_plan_time_cost = 0
     time_stamp = [0.0]
     for (i, j) in zip(sub_mission_route_by_LP[:len(sub_mission_route_by_LP) - 1], sub_mission_route_by_LP[1:]):
@@ -183,24 +183,61 @@ def one_drone_dilivery_departure_route(TG, transit_node, transit_edges, depot_id
     return True, sub_mission_route_by_LP, time_stamp, route_plan_time_cost
 
 
-def one_drone_dilivery_departure_route_by_astar(TG, transit_node, transit_edges, depot_id, package_id, Max_flight):
+def update_transit_constrain(transit_constrain, transit_node, arrive_time, wait_time):
+    left, right = arrive_time, arrive_time + wait_time
+    placed = False
+    ans = []
+    for li, ri in transit_constrain[transit_node]:
+        if li >right:
+            if not placed:
+                ans.append([left, right])
+                placed = True
+            ans.append([li, ri])
+        elif ri < left:
+            ans.append([li, ri])
+        else:
+            left = min(left, li)
+            right = max(right, ri)
+
+    if not placed:
+        ans.append([left, right])
+
+    transit_constrain[transit_node] = ans
+    return transit_constrain
+
+
+def one_drone_dilivery_departure_route_by_astar(TG, transit_constrain, transit_node, transit_edges, depot_id, package_id, Max_flight, start_time=0):
     # now we get a specific transit network only contain one depot and one package and transit node
+    """
+    :param TG:
+    :param transit_constrain:
+    :param transit_node:
+    :param transit_edges:
+    :param depot_id:
+    :param package_id:
+    :param Max_flight:
+    :return:
+    """
     transit_network = MAPF.single_drone_FP.generate_transit_network(TG, transit_node, transit_edges, depot_id, package_id)
 
-    success, sub_mission_way = MAPF.Astar.astar(transit_network, depot_id, package_id, Max_flight)
+    success, sub_mission_way, transit_wait = MAPF.Astar.astar_with_conflict_avoid(transit_network, transit_constrain, transit_edges, depot_id, package_id, Max_flight, start_time)
     if success == False:
         return False, [], [0], -1
     # path finding by astar
     route_plan_distance_cost = 0
-    route_plan_time_cost = 0
-    time_stamp = [0.0]
+    route_plan_time_cost = start_time
+    time_stamp = [start_time]
     for (i, j) in zip(sub_mission_way[:len(sub_mission_way)-1], sub_mission_way[1:]):
         route_plan_distance_cost += transit_network.edges[i, j]['weight']
+        if transit_network.edges[i, j]['type'] == 'transit':
+            update_transit_constrain(transit_constrain, i, route_plan_time_cost, transit_wait[(i, j)])
+            route_plan_time_cost += transit_wait[(i, j)]
         route_plan_time_cost += transit_network.edges[i, j]['time']
+
         time_stamp.append(route_plan_time_cost)
-    print(depot_id, " to", package_id, "route_plan_distance_cost", route_plan_distance_cost)
-    print("route:", sub_mission_way)
-    print("use time", route_plan_time_cost)
+    # print(depot_id, " to", package_id, "route_plan_distance_cost", route_plan_distance_cost)
+    # print("route:", sub_mission_way)
+    # print("use time", route_plan_time_cost)
 
     return True, sub_mission_way, time_stamp, route_plan_time_cost
 
@@ -291,28 +328,75 @@ def UAV_task_allocation_path_planning_by_astar(N_depots, N_transit_edges, N_pack
     plt.savefig(fig_name, dpi=200)
     # plt.show()
 
-    drone_one_dilivery_route = []
-    drone_one_dilivery_time_stamp = []
-    drone_one_dilivery_time = []
-    fail_packages = []
+    # drone_one_dilivery_route = []
+    # drone_one_dilivery_time_stamp = []
+    # drone_one_dilivery_time = []
+    # fail_packages = []
+    drone_start_time = [0 for _ in range(len(drone_tours))]
     # now we compute each drone routes(我们应该为每个无人机先计算出一个交付任务——从仓库出发再到回到仓库，然后计算这些交付序列的冲突节点,解决所有冲突后，得到所有无人机该交付任务的最终路径)
+
+    # 生成初始传输点限制
+    transit_constrain = {}
+    for transit in transit_node:
+        transit_constrain[transit] = []
     # 我们现在只算每个无人机第一个任务路径
-    for i in range(len(drone_tours)):
-        start_depot, package = drone_tours[i][0:2]
-        success, departure_route, departure_time_stamp, departure_time = one_drone_dilivery_departure_route_by_astar(TG, transit_node, transit_edges, start_depot, package, Max_flight)
-        if success:
-            drone_one_dilivery_route.append(departure_route)
-            drone_one_dilivery_time_stamp.append(departure_time_stamp)
-            drone_one_dilivery_time.append(departure_time)
-        else:
-            if package in packages_node:
-                fail_packages.append(package)
-            drone_one_dilivery_route.append([])
-            drone_one_dilivery_time_stamp.append([0])
-            drone_one_dilivery_time.append(-1) # denote fail
+    # for i in range(len(drone_tours)):
+    #     start_depot, package = drone_tours[i][0:2]
+    #     success, departure_route, departure_time_stamp, departure_time = one_drone_dilivery_departure_route_by_astar(TG, transit_constrain, transit_node, transit_edges, start_depot, package, Max_flight, drone_start_time[i])
+    #     if success:
+    #         drone_one_dilivery_route.append(departure_route)
+    #         drone_one_dilivery_time_stamp.append(departure_time_stamp)
+    #         drone_one_dilivery_time.append(departure_time)
+    #         drone_start_time[i] = drone_one_dilivery_time_stamp[-1]
+    #     else:
+    #         if package in packages_node:
+    #             fail_packages.append(package)
+    #         drone_one_dilivery_route.append([])
+    #         drone_one_dilivery_time_stamp.append([0])
+    #         drone_one_dilivery_time.append(-1) # denote fail
+
+    drone_route_plans, drone_route_time_stamp = UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges)
+    return drone_route_plans, drone_route_time_stamp
 
 
-    return drone_one_dilivery_route, drone_one_dilivery_time_stamp, drone_one_dilivery_time, fail_packages
+    # return drone_one_dilivery_route, drone_one_dilivery_time_stamp, drone_one_dilivery_time, fail_packages
+
+
+def UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges):
+    """
+    :param TG:
+    :param drone_tours:
+    :param transit_constrain:
+    :param transit_node:
+    :param transit_edges:
+    :return:
+    """
+    total_task = 0
+    for tour in drone_tours:
+        total_task += len(tour) - 1
+    task_plan = 0
+    index = 0
+    drone_route_plans = [[] for _ in range(len(drone_tours))]
+    drone_route_time_stamp = [[] for _ in range(len(drone_tours))]
+    drone_start_time = [0 for _ in range(len(drone_tours))]
+    while task_plan < total_task:
+        for i in range(len(drone_tours)):
+            if index + 1 >= len(drone_tours[i]):
+                continue
+            start, end = drone_tours[i][index], drone_tours[i][index + 1]
+            success, departure_route, departure_time_stamp, departure_time = one_drone_dilivery_departure_route_by_astar(
+                TG, transit_constrain, transit_node, transit_edges, start, end, Max_flight, drone_start_time[i])
+            #         print(drone_tours[i][index], drone_tours[i][index+1])
+            if success:
+                drone_route_plans[i].append(departure_route)
+                drone_route_time_stamp[i].append(departure_time_stamp)
+                drone_start_time[i] = departure_time_stamp[-1]
+            else:
+                drone_route_plans[i].append([])
+                drone_route_time_stamp[i].append([0])
+            task_plan += 1
+        index += 1
+    return drone_route_plans, drone_route_time_stamp
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -334,16 +418,18 @@ if __name__ == '__main__':
 
     if Algorithm == 'astar':
         print("use astar")
-        drone_one_dilivery_route, drone_one_delivery_time_stamp, drone_one_dilivery_time, fail_packages = UAV_task_allocation_path_planning_by_astar(N_depots, N_transit_edges, N_packages, N_drones, Max_flight)
+        drone_dilivery_route, drone_delivery_time_stamp = UAV_task_allocation_path_planning_by_astar(N_depots, N_transit_edges, N_packages, N_drones, Max_flight)
+        print(drone_dilivery_route)
+        print(drone_delivery_time_stamp)
     else:
         drone_one_dilivery_route, drone_one_delivery_time_stamp, drone_one_dilivery_time, fail_packages = UAV_task_allocation_path_planning(N_depots, N_transit_edges, N_packages, N_drones, Max_flight)
 
 
-    for (route, time_stamp, time) in zip(drone_one_dilivery_route, drone_one_delivery_time_stamp, drone_one_dilivery_time):
-        print("route:", route)
-        print("time_stamp", time_stamp)
-        print("time", time)
-    print("fail deliveries", fail_packages)
+        for (route, time_stamp, time) in zip(drone_one_dilivery_route, drone_one_delivery_time_stamp, drone_one_dilivery_time):
+            print("route:", route)
+            print("time_stamp", time_stamp)
+            print("time", time)
+        print("fail deliveries", fail_packages)
 
 
 
