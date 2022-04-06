@@ -355,14 +355,14 @@ def UAV_task_allocation_path_planning_by_astar(N_depots, N_transit_edges, N_pack
     #         drone_one_dilivery_time_stamp.append([0])
     #         drone_one_dilivery_time.append(-1) # denote fail
 
-    drone_route_plans, drone_route_time_stamp = UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges)
+    drone_route_plans, drone_route_time_stamp = UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges, Max_flight)
     return drone_route_plans, drone_route_time_stamp
 
 
     # return drone_one_dilivery_route, drone_one_dilivery_time_stamp, drone_one_dilivery_time, fail_packages
 
 
-def UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges):
+def UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges, Max_flight=400):
     """
     :param TG:
     :param drone_tours:

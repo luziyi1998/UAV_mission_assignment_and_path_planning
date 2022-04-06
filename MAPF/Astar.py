@@ -117,15 +117,16 @@ def astar_with_conflict_avoid(transit_network, transit_constrain, transit_edges,
     # print(transit_edges)
     start_node = A(depot_id, start_time, 0, [depot_id])
     pq = My_PriorityQueue()
+    close_list = set([])
     pq.push(start_node, start_node.time_cost + transit_network.edges[depot_id, package_id]['time'])
     while not pq.empty():
         cur = pq.pop()
-
+        close_list.add(cur.node_id)
         if(cur.node_id == package_id):
             return True, cur.path, transit_wait
 
         for neighbor, w in transit_network[cur.node_id].items():
-            if cur.flight_cost + transit_network.edges[cur.node_id, neighbor]['weight'] < Max_flight:
+            if neighbor not in close_list and cur.flight_cost + transit_network.edges[cur.node_id, neighbor]['weight'] < Max_flight:
                 total_wait = 0
                 if transit_network.edges[cur.node_id, neighbor]['type'] == 'transit':
                     # 当前无人机到达该站点的时间加上无人机在该站点等待的时间后得到的时间戳，存在冲突，那么，无人机仍然想走原路，则到达时间延长，则等待时间加长
@@ -146,4 +147,5 @@ def astar_with_conflict_avoid(transit_network, transit_constrain, transit_edges,
                 else:
                     add_node = A(neighbor, cur.time_cost + transit_network.edges[cur.node_id, neighbor]['time'] + total_wait, cur.flight_cost + transit_network.edges[cur.node_id, neighbor]['weight'], path)
                     pq.push(add_node, add_node.time_cost + transit_network.edges[neighbor, package_id]['time'])
-    return False, [], [0], -1
+    print("false plan by astar")
+    return False, [], [0]
