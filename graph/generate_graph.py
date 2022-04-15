@@ -189,7 +189,7 @@ def return_Digraph(N_depots, N_transit_edges, N_packages):
     #         #         , font_family = 'arial'
     #         , edge_color='grey'  # b, k, m, g,
     #         )
-    # fig_name = 'zhuhai_keji6lu.jpg'
+    # fig_name = 'test.jpg'
     #
     # plt.savefig(fig_name, dpi=200)
     # plt.show()

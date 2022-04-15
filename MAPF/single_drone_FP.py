@@ -70,9 +70,10 @@ def generate_transit_network(TG, transit_node, transit_edges, depot_id, package_
                                          )
     # reset transit edges weight to 0
     for edge in transit_edges:
+        transit_network.edges[edge[0], edge[1]]['time'] = TG.edges[edge[0], edge[1]]['weight'] / car_speed
         transit_network.edges[edge[0], edge[1]]['weight'] = 0.0
         transit_network.edges[edge[0], edge[1]]['type'] = 'transit'
-        transit_network.edges[edge[0], edge[1]]['time'] = TG.edges[edge[0], edge[1]]['weight'] / car_speed
+
 
     # print(len(transit_network.edges))
 
@@ -89,13 +90,14 @@ def generate_transit_network(TG, transit_node, transit_edges, depot_id, package_
                              , lat=TG.nodes[package_id]['lat']
                              , type='package'
                              )
-    transit_network.add_edge(depot_id, package_id
-                             , type='flight'
-                             , weight=haversine(TG.nodes[depot_id]['lon'], TG.nodes[depot_id]['lat'],
-                                                TG.nodes[package_id]['lon'], TG.nodes[package_id]['lat'])
-                             , time=haversine(TG.nodes[depot_id]['lon'], TG.nodes[depot_id]['lat'],
-                                              TG.nodes[package_id]['lon'], TG.nodes[package_id]['lat']) / drone_speed
-                             )
+    # do not consider the direct flight edge
+    # transit_network.add_edge(depot_id, package_id
+    #                          , type='flight'
+    #                          , weight=haversine(TG.nodes[depot_id]['lon'], TG.nodes[depot_id]['lat'],
+    #                                             TG.nodes[package_id]['lon'], TG.nodes[package_id]['lat'])
+    #                          , time=haversine(TG.nodes[depot_id]['lon'], TG.nodes[depot_id]['lat'],
+    #                                           TG.nodes[package_id]['lon'], TG.nodes[package_id]['lat']) / drone_speed
+    #                          )
 
     # print(len(transit_network.edges))
 

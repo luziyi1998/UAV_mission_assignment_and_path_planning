@@ -135,6 +135,7 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
     # print(res)
     if res.success == False:
         print("task allocate fail")
+        return False, 1, 1, 1, 1, 1
         os._exit(0)
 
     x_edges = res.x
@@ -144,7 +145,7 @@ def MCT(total_node, n_depots, n_packages, cost_matrix, depots_node, transit_node
     # finally we get the optimal edges that less than x_edges
     edges = [vector_idx_to_edge[i] for (i, val) in enumerate(x_edges) if val > 0]
 
-    return (edges, x_edges, vector_idx_to_edge, edge_to_vector_idx, cost_vector)
+    return (True, edges, x_edges, vector_idx_to_edge, edge_to_vector_idx, cost_vector)
 
 
 # 得到MCT结果的强连通分量，
@@ -344,9 +345,11 @@ def cut_circuit(circuit, n_depots, n_drones, edges_to_vector_idx, cost_vector, p
 
 def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, depots_node, transit_node, packages_node,
                     normal_node):
-    edges, x_edges, vector_idx_to_edges, edges_to_vector_idx, cost_vector = MCT(total_nodes, N_depots, N_packages,
+    success, edges, x_edges, vector_idx_to_edges, edges_to_vector_idx, cost_vector = MCT(total_nodes, N_depots, N_packages,
                                                                                 cost_matrix, depots_node, transit_node,
                                                                                 packages_node, normal_node)
+    if success == False:
+        return False
 
     depot_components = get_strong_connected_components(total_nodes, N_depots, N_packages,
                                                        edges, depots_node, packages_node)
@@ -367,7 +370,7 @@ def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, de
     for (i, tours) in enumerate(drone_tours):
         if len(tours) > 0:
             drone_tours[i] = trim_circuit(tours, depots_node, packages_node)
-        if len(drone_tours[i]) == 0 or drone_tours[i] == None:
+        if drone_tours[i] == None or len(drone_tours[i]) == 0:
             empty_tours.append(i)
 
     # delete empty drone tours
@@ -376,5 +379,5 @@ def task_allocation(total_nodes, N_depots, N_packages, N_drones, cost_matrix, de
         if i not in empty_tours:
             final_drone_tours.append(tours)
 
-    print("task allocation done")
+    # print("task allocation done")
     return final_drone_tours

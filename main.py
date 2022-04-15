@@ -218,11 +218,25 @@ def one_drone_dilivery_departure_route_by_astar(TG, transit_constrain, transit_n
     :param Max_flight:
     :return:
     """
-    transit_network = MAPF.single_drone_FP.generate_transit_network(TG, transit_node, transit_edges, depot_id, package_id)
+    drone_speed = 20.0
+    lon1 = TG.nodes[depot_id]['lon']
+    lat1 = TG.nodes[depot_id]['lat']
+    lon2 = TG.nodes[package_id]['lon']
+    lat2 = TG.nodes[package_id]['lat']
+    direct_distance = haversine(lon1, lat1, lon2, lat2)
+
+    if direct_distance < Max_flight:
+        return True, [depot_id, package_id], [start_time, start_time + direct_distance/drone_speed], direct_distance/drone_speed
+
+    if len(transit_edges) == 0:
+        return False, [], [start_time], 0
+
+    transit_network = MAPF.single_drone_FP.generate_transit_network(TG, transit_node, transit_edges, depot_id,
+                                                                    package_id)
 
     success, sub_mission_way, transit_wait = MAPF.Astar.astar_with_conflict_avoid(transit_network, transit_constrain, transit_edges, depot_id, package_id, Max_flight, start_time)
     if success == False:
-        return False, [], [0], -1
+        return False, [], [start_time], 0
     # path finding by astar
     route_plan_distance_cost = 0
     route_plan_time_cost = start_time
@@ -362,7 +376,7 @@ def UAV_task_allocation_path_planning_by_astar(N_depots, N_transit_edges, N_pack
     # return drone_one_dilivery_route, drone_one_dilivery_time_stamp, drone_one_dilivery_time, fail_packages
 
 
-def UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges, Max_flight=400):
+def UAV_find_all(TG, drone_tours, transit_constrain, transit_node, transit_edges, Max_flight=300):
     """
     :param TG:
     :param drone_tours:
